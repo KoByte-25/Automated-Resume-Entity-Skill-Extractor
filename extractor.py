@@ -13,12 +13,12 @@ if "messages" not in st.session_state:
 if "name" not in st.session_state:
     st.session_state.name = None
 if "DOB" not in st.session_state:
-    st.session_state.DOB = None    
+    st.session_state.DOB = None
 if "docx_bytes" not in st.session_state:
-    st.session_state.docx_bytes = None  # initialize here
-
-previous_state_id = 0
-finished = False
+    st.session_state.docx_bytes = None
+if "step" not in st.session_state:
+    # steps: "intro", "name", "dob", "done"
+    st.session_state.step = "intro"
 
 # ---------- Intro (only first time) ----------
 if not st.session_state.messages:
@@ -29,15 +29,18 @@ if not st.session_state.messages:
             "I will ask you a series of questions to build a resume automatically."
         )
     })
+    st.session_state.step = "name"  # after intro, go to name question
 
-# ---------- Helper methods start here ----------
+# ---------- Helper methods ----------
 def extract_name(text: str) -> str:
+    if not text:
+        return ""
     text = text.strip()
 
     patterns = [
-        r"my name is\s+(.+)",   # My name is .
-        r"i am\s+(.+)",         # I am .
-        r"i'm\s+(.+)"           # I'm .
+        r"my name is\s+(.+)",   # My name is ...
+        r"i am\s+(.+)",         # I am ...
+        r"i'm\s+(.+)"           # I'm ...
     ]
 
     for pat in patterns:
@@ -46,18 +49,16 @@ def extract_name(text: str) -> str:
             name = m.group(1).strip(". ").strip()
             return name
 
-    # Fallback: use full text
-    return text
+    return text  # fallback: full text
 
 def extract_dob(text: str) -> str:
+    if not text:
+        return ""
     text = text.strip()
 
     patterns = [
         r".*\sis\s+(0[1-9]|[12][0-9]|3[0-1])\/(0[1-9]|1[0-2])\/([0-9]{4})$"
     ]
-
-    date = ""
-    mon = ""
 
     for pat in patterns:
         m = re.search(pat, text, flags=re.IGNORECASE)
@@ -81,20 +82,19 @@ def extract_dob(text: str) -> str:
                 case "12": mon = "December"
                 case _: mon = "Unknown Month"
 
-            date = day + " " + mon + " " + year
-            return date
+            return f"{day} {mon} {year}"
 
-    # Fallback: use full text
-    return text
+    return text  # fallback
 
-# ---------- Render existing history once ----------
+
+# ---------- Render existing history ----------
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
 
-# ---------- Ask for name if not set ----------
-if previous_state_id == 0 and st.session_state.name is None:
-    # Add the question as a normal bot message only once
+# ---------- Name step ----------
+if st.session_state.step == "name" and st.session_state.name is None:
+    # Ask only once
     if not any("please tell me your full name" in m["content"].lower()
                for m in st.session_state.messages):
         question = "First, please tell me your full name?"
@@ -105,7 +105,6 @@ if previous_state_id == 0 and st.session_state.name is None:
         with st.chat_message("assistant"):
             st.write(question)
 
-    # ---------- Name Input box ----------
     user_input = st.chat_input("Type your name here...")
 
     if user_input:
@@ -115,32 +114,19 @@ if previous_state_id == 0 and st.session_state.name is None:
             "content": user_input
         })
 
-        # Process name only if we don't have it yet
-        if st.session_state.name is None:
-            name = extract_name(user_input)
-            st.session_state.name = name
+        # Process name
+        name = extract_name(user_input)
+        st.session_state.name = name
 
-            # bot_reply = (
-            #     f"Nice to meet you, {name}! "
-            #     f"I will use this as the name at the top of your resume."
-            # )
+        with st.chat_message("user"):
+            st.write(user_input)
 
-            # st.session_state.messages.append({
-            #     "role": "assistant",
-            #     "content": bot_reply
-            # })
+        # Move to DOB step
+        st.session_state.step = "dob"
+        st.rerun()
 
-            # Show only the new messages for this turn
-            with st.chat_message("user"):
-                st.write(user_input)
-
-            previous_state_id+=1
-            # with st.chat_message("assistant"):
-            #     st.write(bot_reply)
-
-# ---------- Ask for DOB if not set ----------
-if previous_state_id == 1 and st.session_state.DOB is None:
-    # Add the question as a normal bot message only once
+# ---------- DOB step ----------
+elif st.session_state.step == "dob" and st.session_state.DOB is None:
     if not any("please tell me your date of birth" in m["content"].lower()
                for m in st.session_state.messages):
         dobQuestion = "Now, can you tell me your date of birth (dd/mm/yyyy)?"
@@ -151,30 +137,26 @@ if previous_state_id == 1 and st.session_state.DOB is None:
         with st.chat_message("assistant"):
             st.write(dobQuestion)
 
-    # ---------- DOB Input box ----------
     dobInput = st.chat_input("Type your date of birth here...")
 
     if dobInput:
-        # Store user message
         st.session_state.messages.append({
             "role": "user",
             "content": dobInput
         })
 
-        # Process name only if we don't have it yet
-        if st.session_state.DOB is None:
-            dob = extract_dob(dobInput)
-            st.session_state.DOB = dob
+        dob = extract_dob(dobInput)
+        st.session_state.DOB = dob
 
-            # Show only the new messages for this turn
-            with st.chat_message("user"):
-                st.write(dobInput)
+        with st.chat_message("user"):
+            st.write(dobInput)
 
-            finished = True
+        # All basic info collected
+        st.session_state.step = "done"
+        st.rerun()
 
-
-# ---------- If we have name, generate Word file (test) ----------
-if finished == True and st.session_state.docx_bytes is None:
+# ---------- Generate Word file ----------
+if st.session_state.step == "done" and st.session_state.docx_bytes is None:
     with st.chat_message("assistant"):
         st.write(
             "Please wait, I am generating your resume Word file using your name..."
@@ -184,22 +166,19 @@ if finished == True and st.session_state.docx_bytes is None:
     for pct in range(0, 101, 25):
         progress_bar.progress(pct)
 
-    # Create Word document in memory
-    doc = Document()  
+    doc = Document()
 
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     titleRun = title.add_run("Curriculum Vitae")
     titleRun.bold = True
     titleRun.underline = True
-    
     titleRun.font.size = Pt(36)
     titleRun.font.name = "Times New Roman"
 
-    nameP = doc.add_paragraph()    
+    nameP = doc.add_paragraph()
     nameRun = nameP.add_run(st.session_state.name)
     nameRun.bold = True
-    
     nameRun.font.size = Pt(24)
     nameRun.font.name = "Times New Roman"
 
