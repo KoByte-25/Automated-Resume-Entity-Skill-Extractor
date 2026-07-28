@@ -94,7 +94,7 @@ if user_input:
             st.write(bot_reply)
 
 # ---------- If we have name, generate Word file (test) ----------
-if st.session_state.name is not None and st.session_state.docx_bytes is None:
+if st.session_state.docx_bytes is None:
     with st.chat_message("assistant"):
         st.write(
             "Please wait, I am generating your resume Word file using your name..."
@@ -105,15 +105,23 @@ if st.session_state.name is not None and st.session_state.docx_bytes is None:
         progress_bar.progress(pct)
 
     # Create Word document in memory
-    doc = Document()  # [web:70][web:67]
+    doc = Document()  
 
-    p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run(st.session_state.name)
-    run.bold = True
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    titleRun = title.add_run("Curriculum Vitae")
+    titleRun.bold = True
+    titleRun.underline = True
     
-    run.font.size = Pt(36)
-    run.font.name = "Times New Roman"
+    titleRun.font.size = Pt(36)
+    titleRun.font.name = "Times New Roman"
+
+    nameP = doc.add_paragraph()    
+    nameRun = nameP.add_run(st.session_state.name)
+    nameRun.bold = True
+    
+    nameRun.font.size = Pt(24)
+    nameRun.font.name = "Times New Roman"
 
     buffer = io.BytesIO()
     doc.save(buffer)
