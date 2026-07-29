@@ -4,6 +4,8 @@ import streamlit as st
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.shared import OxmlElement
+from docx.oxml.ns import qn
 
 st.title("Automated Resume Entity & Skill Extractor")
 
@@ -16,6 +18,12 @@ if "DOB" not in st.session_state:
     st.session_state.DOB = None
 if "ADDR" not in st.session_state:
     st.session_state.ADDR = None
+if "PHONE" not in st.session_state:
+    st.session_state.PHONE = None
+if "EMAIL" not in st.session_state:
+    st.session_state.EMAIL = None
+if "CAREER_OBJECTIVE" not in st.session_state:
+    st.session_state.CAREER_OBJECTIVE = None
 if "docx_bytes" not in st.session_state:
     st.session_state.docx_bytes = None
 if "step" not in st.session_state:
@@ -34,6 +42,27 @@ if not st.session_state.messages:
     st.session_state.step = "name"  # after intro, go to name question
 
 # ---------- Helper methods ----------
+def insert_hr(paragraph):
+    p = paragraph._p  # <w:p> element
+    pPr = p.get_or_add_pPr()
+    pBdr = OxmlElement('w:pBdr')
+    pPr.insert_element_before(
+        pBdr,
+        'w:shd', 'w:tabs', 'w:suppressAutoHyphens', 'w:kinsoku', 'w:wordWrap',
+        'w:overflowPunct', 'w:topLinePunct', 'w:autoSpaceDE', 'w:autoSpaceDN',
+        'w:bidi', 'w:adjustRightInd', 'w:snapToGrid', 'w:spacing', 'w:ind',
+        'w:contextualSpacing', 'w:mirrorIndents', 'w:suppressOverlap', 'w:jc',
+        'w:textDirection', 'w:textAlignment', 'w:textboxTightWrap',
+        'w:outlineLvl', 'w:divId', 'w:cnfStyle', 'w:rPr', 'w:sectPr',
+        'w:pPrChange'
+    )
+    bottom = OxmlElement('w:bottom')
+    bottom.set(qn('w:val'), 'single')
+    bottom.set(qn('w:sz'), '10')      # thickness
+    bottom.set(qn('w:space'), '1')
+    bottom.set(qn('w:color'), 'auto')
+    pBdr.append(bottom)
+
 def extract_name(text: str) -> str:
     if not text:
         return ""
@@ -116,6 +145,110 @@ def extract_addr(text: str) -> str:
 
     return text  # fallback
 
+def extract_phone(text: str) -> str:
+    if not text:
+        return ""
+    text = text.strip(". ").strip()
+
+    patterns = [
+        r".*\sis\s+09([0-9]{9})\.$",
+        r".*(ကတော့|က)\s+09([0-9]{9})\s+.*(ဖြစ်ပါတယ်။|ပါ။|ဖြစ်တယ်။)$",
+    ]
+
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if m:
+            phone = m.group(2).strip()
+
+            return f"+95 9{phone}"
+
+    return text  # fallback
+
+def extract_email(text: str) -> str:
+    if not text:
+        return ""
+    text = text.strip(". ").strip()
+
+    patterns = [
+        r".*\sis\s+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\.$",
+        r".*(ကတော့|က)\s+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\s+.*(ဖြစ်ပါတယ်။|ပါ။|ဖြစ်တယ်။)$",
+    ]
+
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if m:
+            email = m.group(2).strip()
+
+            return email
+
+    return text  # fallback
+
+def process_career_objective(text: str) -> str:
+    if not text:
+        return ""
+
+    original = text.strip()
+    lower = original.lower()
+
+    # 1) Detect role / identity (very simple keyword-based)
+    role = None
+    if "student" in lower:
+        role = "student"
+    if "developer" in lower or "programmer" in lower or "engineer" in lower:
+        role = "software developer"
+    if "data" in lower and "analyst" in lower:
+        role = "data analyst"
+
+    # Default if nothing obvious
+    if role is None:
+        role = "aspiring professional"
+
+    # 2) Detect goal phrase
+    goal = None
+    trigger_phrases = [
+        "want to", "would like to", "aim to", "aiming to", "plan to",
+        "my goal is", "my objective is", "seeking", "looking for",
+        "hope to", "hoping to"
+    ]
+    for phrase in trigger_phrases:
+        idx = lower.find(phrase)
+        if idx != -1:
+            # Take everything after the phrase as goal clause
+            start = idx + len(phrase)
+            goal = original[start:].strip(" .")
+            break
+
+    # 3) Detect skills / strengths (simple keywords)
+    skills_keywords = [
+        "android", "flutter", "php", "mysql", "javascript",
+        "python", "nlp", "machine learning", "data science",
+        "team", "leadership", "communication", "problem-solving"
+    ]
+    skills_found = [kw for kw in skills_keywords if kw in lower]
+
+    # Build skill/value sentence
+    value_sentence = ""
+    if skills_found:
+        # Make them readable (capitalize first letter)
+        pretty_skills = ", ".join(s.title() for s in skills_found)
+        value_sentence = (
+            f" I bring skills in {pretty_skills} and am eager to contribute to real-world projects."
+        )
+
+    # 4) Compose final objective (2–3 sentences)
+    if goal:
+        objective = (
+            f"As a {role}, I am seeking opportunities to {goal}. "
+            f"My aim is to grow professionally while adding value to my organization.{value_sentence}"
+        )
+    else:
+        # No explicit goal phrase; keep it generic
+        objective = (
+            f"As a {role}, I am seeking opportunities to develop my skills and gain practical experience. "
+            f"I am motivated to learn, grow, and contribute to my future team.{value_sentence}"
+        )
+
+    return objective
 
 # ---------- Render existing history ----------
 for msg in st.session_state.messages:
@@ -224,6 +357,105 @@ elif st.session_state.step == "addr" and st.session_state.ADDR is None:
             st.write(addrInput)
 
         # All basic info collected
+        st.session_state.step = "phone"
+        st.rerun()
+
+elif st.session_state.step == "phone" and st.session_state.PHONE is None:
+    phoneQuestion = "အခု သင့်ရဲ့ ဖုန်းနံပါတ်ကို ထည့်သွင်းပေးပါ။"
+
+    # Ask only once: check for exact question text in history
+    if not any(
+        m["role"] == "assistant" and m["content"] == phoneQuestion
+        for m in st.session_state.messages
+    ):
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": phoneQuestion
+        })
+        with st.chat_message("assistant"):
+            st.write(phoneQuestion)
+
+    phoneInput = st.chat_input("သင့်ရဲ့ ဖုန်းနံပါတ်ကို ဒီမှာ ရေးပေးပါ...")
+
+    if phoneInput:
+        st.session_state.messages.append({
+            "role": "user",
+            "content": phoneInput
+        })
+
+        phone = extract_phone(phoneInput)
+        st.session_state.PHONE = phone
+
+        with st.chat_message("user"):
+            st.write(phoneInput)
+
+        # All basic info collected
+        st.session_state.step = "email"
+        st.rerun()
+
+elif st.session_state.step == "email" and st.session_state.EMAIL is None:
+    emailQuestion = "အခု သင့်ရဲ့ အီးမေးလ်လိပ်စာကို ထည့်သွင်းပေးပါ။"
+
+    # Ask only once: check for exact question text in history
+    if not any(
+        m["role"] == "assistant" and m["content"] == emailQuestion
+        for m in st.session_state.messages
+    ):
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": emailQuestion
+        })
+        with st.chat_message("assistant"):
+            st.write(emailQuestion)
+
+    emailInput = st.chat_input("သင့်ရဲ့ အီးမေးလ်လိပ်စာကို ဒီမှာ ရေးပေးပါ...")
+
+    if emailInput:
+        st.session_state.messages.append({
+            "role": "user",
+            "content": emailInput
+        })
+
+        email = extract_email(emailInput)
+        st.session_state.EMAIL = email
+
+        with st.chat_message("user"):
+            st.write(emailInput)
+
+        # All basic info collected
+        st.session_state.step = "done"
+        st.rerun()
+
+elif st.session_state.step == "career_objective" and st.session_state.CAREER_OBJECTIVE is None:
+    careerQuestion = "အခု သင့်ရဲ့ အလုပ်ရည်ရွယ်ချက် ကို ထည့်သွင်းပေးပါ။"
+
+    # Ask only once: check for exact question text in history
+    if not any(
+        m["role"] == "assistant" and m["content"] == careerQuestion
+        for m in st.session_state.messages
+    ):
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": careerQuestion
+        })
+        with st.chat_message("assistant"):
+            st.write(careerQuestion)
+
+    careerInput = st.chat_input("သင့်ရဲ့ အလုပ်ရည်ရွယ်ချက်ကို ဒီမှာ ရေးပေးပါ...")
+
+    if careerInput:
+        st.session_state.messages.append({
+            "role": "user",
+            "content": careerInput
+        })
+
+        career = process_career_objective(careerInput)
+        st.session_state.CAREER_OBJECTIVE = career
+
+        with st.chat_message("user"):
+            st.write(careerInput)
+
+        # All basic info collected
         st.session_state.step = "done"
         st.rerun()
 
@@ -280,7 +512,50 @@ if st.session_state.step == "done" and st.session_state.docx_bytes is None:
     addrValue.font.size = Pt(12)
     addrValue.font.name = "Times New Roman"
 
-        
+    phoneP = doc.add_paragraph()
+    phoneBullet = phoneP.add_run("\u2666")
+    phoneBullet.bold = True
+    phoneBullet.font.size = Pt(12)
+    phoneBullet.font.name = "Segoe UI Symbol"
+    phoneLable = phoneP.add_run("Phone\t\t: ")
+    phoneLable.bold = True
+    phoneLable.font.size = Pt(12)
+    phoneLable.font.name = "Times New Roman"
+    phoneValue = phoneP.add_run(st.session_state.PHONE)
+    phoneValue.font.size = Pt(12)
+    phoneValue.font.name = "Times New Roman"
+
+    emailP = doc.add_paragraph()
+    emailBullet = emailP.add_run("\u2666")
+    emailBullet.bold = True
+    emailBullet.font.size = Pt(12)
+    emailBullet.font.name = "Segoe UI Symbol"
+    emailLable = emailP.add_run("Email\t\t: ")
+    emailLable.bold = True
+    emailLable.font.size = Pt(12)
+    emailLable.font.name = "Times New Roman"
+    emailValue = emailP.add_run(st.session_state.EMAIL)
+    emailValue.font.size = Pt(12)
+    emailValue.font.name = "Times New Roman"
+
+    hr1P = doc.add_paragraph()
+    insert_hr(hr1P)
+
+    cbP = doc.add_paragraph()
+    cbRun = cbP.add_run("Career Objective")
+    cbRun.bold = True
+    cbRun.underline = True
+    cbRun.font.size = Pt(16)
+    cbRun.font.name = "Times New Roman"
+
+    cbValueP = doc.add_paragraph()
+    cbValueRun = cbValueP.add_run(st.session_state.CAREER_OBJECTIVE)
+    cbValueRun.font.size = Pt(12)
+    cbValueRun.font.name = "Times New Roman"
+
+    hr2P = doc.add_paragraph()
+    insert_hr(hr2P)
+
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
