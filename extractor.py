@@ -198,7 +198,8 @@ def process_career_objective(text: str) -> str:
         role = "software developer"
     if "data" in lower and "analyst" in lower:
         role = "data analyst"
-
+    if "business" in lower and "analyst" in lower:
+            role = "business analyst"
     # Default if nothing obvious
     if role is None:
         role = "aspiring professional"
@@ -222,7 +223,8 @@ def process_career_objective(text: str) -> str:
     skills_keywords = [
         "android", "flutter", "php", "mysql", "javascript",
         "python", "nlp", "machine learning", "data science",
-        "team", "leadership", "communication", "problem-solving"
+        "teamwork", "leadership", "communication", "problem-solving", "odoo", "erp", "django", "react", "vue", "angular",
+        "web development", "mobile development", "software development", "data analysis", "project management"
     ]
     skills_found = [kw for kw in skills_keywords if kw in lower]
 
@@ -249,6 +251,53 @@ def process_career_objective(text: str) -> str:
         )
 
     return objective
+
+def translate_career_objective_myanmar_to_english(text: str) -> str:
+    if not text:
+        return ""
+
+    replacements = {
+        "ရည်မှန်းချက်": "goal",
+        "အလုပ်": "job",
+        "အလုပ်လျှောက်": "apply for a job",
+        "အလုပ်ရ": "get a job",
+        "စီမံကိန်း": "project",
+        "တိုးတက်": "improve",
+        "ကျွမ်းကျင်မှု": "skills",
+        "အတွေ့အကြုံ": "experience",
+        "လေ့လာ": "learn",
+        "အသုံးချ": "apply",
+        "ထည့်ဝင်": "contribute",
+        "ဆောင်ရွက်": "work",
+        "တည်ဆောက်": "build",
+        "ပံ့ပိုး": "support",
+        "ရယူ": "gain",
+        "ဖွံ့ဖြိုး": "develop",
+        "အသိပညာ": "knowledge",
+        "ပညာရပ်": "field",
+        "အနာဂတ်": "future",
+        "တာဝန်": "responsibility",
+        "ပရော်ဖက်ရှင်နယ်": "professional",
+        "ဖွံ့ဖြိုးရေး": "development",
+        "အဖွဲ့": "team",
+        "ကုမ္ပဏီ": "company",
+        "အင်ဂျင်နီယာ": "engineer",
+        "developer": "developer",
+        "software developer": "software developer",
+        "ကျောင်းသား": "student",
+        "ဆော့ဖ်ဝဲ": "software",
+        "အင်တာနက်": "internet",
+        "အသင်းအဖွဲ့": "team",
+        "အသင်းအဖွဲ့ဝင်": "team member",
+        "အဖွဲ့အစည်း": "organization",
+        "အသင်းအဖွဲ့နဲ့ အလုပ်လုပ်နိုင်": "work well in a team",
+    }
+
+    translated = text
+    for burmese, english in replacements.items():
+        translated = translated.replace(burmese, english)
+
+    return translated
 
 # ---------- Render existing history ----------
 for msg in st.session_state.messages:
@@ -423,7 +472,7 @@ elif st.session_state.step == "email" and st.session_state.EMAIL is None:
             st.write(emailInput)
 
         # All basic info collected
-        st.session_state.step = "done"
+        st.session_state.step = "career_objective"
         st.rerun()
 
 elif st.session_state.step == "career_objective" and st.session_state.CAREER_OBJECTIVE is None:
@@ -449,7 +498,13 @@ elif st.session_state.step == "career_objective" and st.session_state.CAREER_OBJ
             "content": careerInput
         })
 
-        career = process_career_objective(careerInput)
+        career = ""
+        if(re.search(r"[\u1000-\u109F\uAA60-\uAA7F]", careerInput)):
+            career_translated = translate_career_objective_myanmar_to_english(careerInput)
+            career = process_career_objective(career_translated)
+        else: 
+            career = process_career_objective(careerInput)
+
         st.session_state.CAREER_OBJECTIVE = career
 
         with st.chat_message("user"):
