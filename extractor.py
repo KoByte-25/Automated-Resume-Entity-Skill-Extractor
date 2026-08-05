@@ -24,6 +24,8 @@ if "EMAIL" not in st.session_state:
     st.session_state.EMAIL = None
 if "CAREER_OBJECTIVE" not in st.session_state:
     st.session_state.CAREER_OBJECTIVE = None
+if "DEGREE" not in st.session_state:
+    st.session_state.DEGREE = None    
 if "docx_bytes" not in st.session_state:
     st.session_state.docx_bytes = None
 if "step" not in st.session_state:
@@ -93,7 +95,13 @@ def extract_dob(text: str) -> str:
         r".*\sis\s+(0[1-9]|[12][0-9]|3[0-1])\/(0[1-9]|1[0-2])\/([0-9]{4})$",
         r"(0[1-9]|[12][0-9]|3[0-1])\/(0[1-9]|1[0-2])\/([0-9]{4})$",
         r".*ကတော့\s+(0[1-9]|[12][0-9]|3[0-1])\/(0[1-9]|1[0-2])\/([0-9]{4})\s+.*(ဖြစ်ပါတယ်။|ပါ။|ဖြစ်တယ်။)$",
-        r".*က\s+(0[1-9]|[12][0-9]|3[0-1])\/(0[1-9]|1[0-2])\/([0-9]{4})\s+.*(ဖြစ်ပါတယ်။|ပါ။|ဖြစ်တယ်။)$"
+        r".*က\s+(0[1-9]|[12][0-9]|3[0-1])\/(0[1-9]|1[0-2])\/([0-9]{4})\s+.*(ဖြစ်ပါတယ်။|ပါ။|ဖြစ်တယ်။)$",
+        r".*ကတော့\s+(0[1-9]|[12][0-9]|3[0-1])\/(0[1-9]|1[0-2])\/([0-9]{4})\s+.*",
+        r".*က\s+(0[1-9]|[12][0-9]|3[0-1])\/(0[1-9]|1[0-2])\/([0-9]{4})\s+.*",
+        r"(0[1-9]|[12][0-9]|3[0-1])\/(0[1-9]|1[0-2])\/([0-9]{4})",
+        r"(0[1-9]|[12][0-9]|3[0-1])-(0[1-9]|1[0-2])-([0-9]{4})",
+        r"(0[1-9]|[12][0-9]|3[0-1]),(0[1-9]|1[0-2]),([0-9]{4})",
+        r"(0[1-9]|[12][0-9]|3[0-1])\s(0[1-9]|1[0-2])\s([0-9]{4})"
 
     ]
 
@@ -298,6 +306,26 @@ def translate_career_objective_myanmar_to_english(text: str) -> str:
         translated = translated.replace(burmese, english)
 
     return translated
+
+def extract_degree(text: str) -> str:
+    if not text:
+        return []
+
+    results = []
+    parts = [p.strip() for p in text.split(".") if p.strip()]
+
+    for part in parts:
+        match = re.match(r"^(.+?),\s*(.+?),\s*(\d{4})$", part)
+        if match:
+            results.append({
+                "degree": match.group(1).strip(),
+                "university": match.group(2).strip(),
+                "year": match.group(3).strip()
+            })
+        else:
+            results.append({"raw": part})
+
+    return results
 
 # ---------- Render existing history ----------
 for msg in st.session_state.messages:
@@ -511,6 +539,40 @@ elif st.session_state.step == "career_objective" and st.session_state.CAREER_OBJ
             st.write(careerInput)
 
         # All basic info collected
+        st.session_state.step = "degree"
+        st.rerun()
+
+elif st.session_state.step == "degree" and st.session_state.DEGREE is None:
+    degreeQuestion = "အခု သင်ရရှိထားသော ဘွဲ့ သို့မဟုတ် Diploma များ ရှိပါက ဘွဲ့ နာမည်၊ ရရှိတဲ့ တက္ကသိုလ် (သို့) ကောလိပ်၊ ရရှိခဲ့သည့် ခုနှစ်ကို ပြောပြပေးပါ။"
+
+    # Ask only once: check for exact question text in history
+    if not any(
+        m["role"] == "assistant" and m["content"] == degreeQuestion
+        for m in st.session_state.messages
+    ):
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": degreeQuestion
+        })
+        with st.chat_message("assistant"):
+            st.write(degreeQuestion)
+
+    degreeInput = st.chat_input("သင့်ရဲ့ ဘွဲ့များကို ဒီမှာ ရေးပေးပါ...")
+
+    if degreeInput:
+        st.session_state.messages.append({
+            "role": "user",
+            "content": degreeInput
+        })
+
+        degrees = extract_degree(degreeInput)
+
+        st.session_state.DEGREE = degrees
+
+        with st.chat_message("user"):
+            st.write(degreeInput)
+
+        # All basic info collected
         st.session_state.step = "done"
         st.rerun()
 
@@ -607,9 +669,22 @@ if st.session_state.step == "done" and st.session_state.docx_bytes is None:
     cbValueRun = cbValueP.add_run(st.session_state.CAREER_OBJECTIVE)
     cbValueRun.font.size = Pt(12)
     cbValueRun.font.name = "Times New Roman"
-
+    
     hr2P = doc.add_paragraph()
     insert_hr(hr2P)
+
+    degP = doc.add_paragraph()
+    degRun = degP.add_run("Academic Qualifications")
+    degRun.bold = True
+    degRun.underline = True
+    degRun.font.size = Pt(16)
+    degRun.font.name = "Times New Roman"
+
+    for res in st.session_state.DEGREE:
+        degreeP = doc.add_paragraph()        
+        degreeValue = degreeP.add_run(res["degree"] + '\t' + res["university"] + '\t' + res["year"])
+        degreeValue.font.size = Pt(11)
+        degreeValue.font.name = "Times New Roman"
 
     buffer = io.BytesIO()
     doc.save(buffer)
