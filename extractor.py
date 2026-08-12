@@ -26,6 +26,16 @@ if "CAREER_OBJECTIVE" not in st.session_state:
     st.session_state.CAREER_OBJECTIVE = None
 if "DEGREE" not in st.session_state:
     st.session_state.DEGREE = None    
+if "PROJECTS" not in st.session_state:
+    st.session_state.PROJECTS = None
+if "SOFT_SKILLS" not in st.session_state:
+    st.session_state.SOFT_SKILLS = None
+
+if "PROF_SKILLS" not in st.session_state:
+    st.session_state.PROF_SKILLS = None
+if "APPLIED_POSITION" not in st.session_state:
+    st.session_state.APPLIED_POSITION = None
+
 if "docx_bytes" not in st.session_state:
     st.session_state.docx_bytes = None
 if "step" not in st.session_state:
@@ -212,6 +222,8 @@ def process_career_objective(text: str) -> str:
     if role is None:
         role = "aspiring professional"
 
+    st.session_state.APPLIED_POSITION = role
+
     # 2) Detect goal phrase
     goal = None
     trigger_phrases = [
@@ -235,12 +247,14 @@ def process_career_objective(text: str) -> str:
         "web development", "mobile development", "software development", "data analysis", "project management"
     ]
     skills_found = [kw for kw in skills_keywords if kw in lower]
+    st.session_state.PROF_SKILLS = skills_found
 
     # Build skill/value sentence
     value_sentence = ""
     if skills_found:
         # Make them readable (capitalize first letter)
         pretty_skills = ", ".join(s.title() for s in skills_found)
+        
         value_sentence = (
             f" I bring skills in {pretty_skills} and am eager to contribute to real-world projects."
         )
@@ -299,6 +313,13 @@ def translate_career_objective_myanmar_to_english(text: str) -> str:
         "အသင်းအဖွဲ့ဝင်": "team member",
         "အဖွဲ့အစည်း": "organization",
         "အသင်းအဖွဲ့နဲ့ အလုပ်လုပ်နိုင်": "work well in a team",
+        "လျင်မြန်စွာ လေ့လာနိုင်သူ": "quick learner",
+        "လေ့လာနိုင်သူ": "learner",
+        "ကိုယ့်ကိုယ်ကို အလိုအလျောက် အားပေးနိုင်သူ": "self-motivated",
+        "ဖိအား": "pressure",
+        "ဖိအားနှင့် အလုပ်လုပ်နိုင်သူ": "handles pressure well",
+        "ပြောဆိုဆက်ဆံရေး ရေးကောင်းမွန်သူ": "communication skills",
+        "ပြောဆိုဆက်ဆံရေး": "communication"
     }
 
     translated = text
@@ -327,6 +348,45 @@ def extract_degree(text: str) -> str:
 
     return results
 
+def extract_projects(text: str) -> str:
+    if not text:
+        return []
+
+    results = []
+    parts = [p.strip() for p in text.split(".") if p.strip()]
+
+    for part in parts:
+        match = re.match(r"^(.+?)$", part)
+        match1 = re.match(r"(?=မရှိ|မရှိပါ|no)", part)
+        if match:
+            results.append(match.group(1).strip())
+        elif match1:
+            results.append({"No projects"})
+        else:
+            results.append({"raw": part})
+
+    return results
+
+def process_soft_skills(text: str) -> str:
+    if not text:
+        return ""
+
+    original = text.strip()
+    lower = original.lower()
+
+    skills_keywords = [
+        "quick learner", "team", "self-motivated", "under pressure", "communication skills", "learner", "handles pressure well", "communication"]
+
+    skills_found = [kw for kw in skills_keywords if kw in lower]
+    if skills_found:
+        soft_skills = [
+            "Quick learner with a strong interest in exploring new technologies.",
+            "Self-motivated and able to work effectively as part of a team.",
+            "Capable of performing well under pressure and meeting deadlines.",
+            "Strong communication skills."
+        ]
+
+    return soft_skills
 # ---------- Render existing history ----------
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -573,8 +633,82 @@ elif st.session_state.step == "degree" and st.session_state.DEGREE is None:
             st.write(degreeInput)
 
         # All basic info collected
+        st.session_state.step = "projects"
+        st.rerun()
+
+elif st.session_state.step == "projects" and st.session_state.PROJECTS is None:
+    prjQuestion = "အခု သင်ပြုလုပ်ထားသော အလုပ်များ၊ ပရောဂျက်များ ရှိပါက ဖော်ပြပါ။"
+
+    # Ask only once: check for exact question text in history
+    if not any(
+        m["role"] == "assistant" and m["content"] == prjQuestion
+        for m in st.session_state.messages
+    ):
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": prjQuestion
+        })
+        with st.chat_message("assistant"):
+            st.write(prjQuestion)
+
+    prjInput = st.chat_input("သင့်ရဲ့ ပရောဂျက်များကို ဒီမှာ ရေးပေးပါ...")
+
+    if prjInput:
+        st.session_state.messages.append({
+            "role": "user",
+            "content": prjInput
+        })
+
+        projects = extract_projects(prjInput)
+
+        st.session_state.PROJECTS = projects
+
+        with st.chat_message("user"):
+            st.write(prjInput)
+
+        # All basic info collected
+        st.session_state.step = "soft_skills"
+        st.rerun()
+
+elif st.session_state.step == "soft_skills" and st.session_state.SOFT_SKILLS is None:
+    softSkillsQuestion = "အခု သင့်မှာရှိတဲ့ soft skills များကို ဖော်ပြပေးပါ။ (ဥပမာ - လျင်မြန်စွာ သင်ယူနိုင်သူ၊ အသင်းအဖွဲ့နှင့် လုပ်နိုင်သူ၊ ပြောဆိုဆက်ဆံရေး ကောင်းမွန်သူ)"
+
+    # Ask only once: check for exact question text in history
+    if not any(
+        m["role"] == "assistant" and m["content"] == softSkillsQuestion
+        for m in st.session_state.messages
+    ):
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": softSkillsQuestion
+        })
+        with st.chat_message("assistant"):
+            st.write(softSkillsQuestion)
+
+    softSkillsInput = st.chat_input("သင့်ရဲ့ soft skills များကို ဒီမှာ ရေးပေးပါ...")
+
+    if softSkillsInput:
+        st.session_state.messages.append({
+            "role": "user",
+            "content": softSkillsInput
+        })
+
+        soft_skills = ""
+        if(re.search(r"[\u1000-\u109F\uAA60-\uAA7F]", softSkillsInput)):
+            soft_translated = translate_career_objective_myanmar_to_english(softSkillsInput)
+            soft_skills = process_soft_skills(soft_translated)
+        else: 
+            soft_skills = process_soft_skills(softSkillsInput)
+
+        st.session_state.SOFT_SKILLS = soft_skills
+
+        with st.chat_message("user"):
+            st.write(softSkillsInput)
+
+        # All basic info collected
         st.session_state.step = "done"
         st.rerun()
+
 
 # ---------- Generate Word file ----------
 if st.session_state.step == "done" and st.session_state.docx_bytes is None:
@@ -685,6 +819,77 @@ if st.session_state.step == "done" and st.session_state.docx_bytes is None:
         degreeValue = degreeP.add_run(res["degree"] + '\t' + res["university"] + '\t' + res["year"])
         degreeValue.font.size = Pt(11)
         degreeValue.font.name = "Times New Roman"
+
+    hr2P = doc.add_paragraph()
+    insert_hr(hr2P)
+
+    prjP = doc.add_paragraph()
+    prjRun = prjP.add_run("Academic Projects")
+    prjRun.bold = True
+    prjRun.underline = True
+    prjRun.font.size = Pt(16)
+    prjRun.font.name = "Times New Roman"
+
+    for res in st.session_state.PROJECTS:
+        prjP = doc.add_paragraph()
+        prjValue = prjP.add_run(res)
+        prjValue.font.size = Pt(11)
+        prjValue.font.name = "Times New Roman"
+
+    hr2P = doc.add_paragraph()
+    insert_hr(hr2P)
+
+    softP = doc.add_paragraph()
+    softRun = softP.add_run("Personal Skills")
+    softRun.bold = True
+    softRun.underline = True
+    softRun.font.size = Pt(16)
+    softRun.font.name = "Times New Roman"
+
+    for res in st.session_state.SOFT_SKILLS:
+        softV = doc.add_paragraph()
+        softBullet = softV.add_run("\u2666\t")
+        softBullet.bold = True
+        softBullet.font.size = Pt(12)
+        softBullet.font.name = "Segoe UI Symbol"
+        softValue = softV.add_run(res)
+        softValue.font.size = Pt(11)
+        softValue.font.name = "Times New Roman"
+
+    hr2P = doc.add_paragraph()
+    insert_hr(hr2P)
+
+    psP = doc.add_paragraph()
+    psRun = psP.add_run("Professional Skills")
+    psRun.bold = True
+    psRun.underline = True
+    psRun.font.size = Pt(16)
+    psRun.font.name = "Times New Roman"
+
+    for res in st.session_state.PROF_SKILLS:
+        psV = doc.add_paragraph()
+        psBullet = psV.add_run("\u2666\t")
+        psBullet.bold = True
+        psBullet.font.size = Pt(12)
+        psBullet.font.name = "Segoe UI Symbol"
+        psValue = psV.add_run(res)
+        psValue.font.size = Pt(11)
+        psValue.font.name = "Times New Roman"
+
+    hr2P = doc.add_paragraph()
+    insert_hr(hr2P)
+
+    applP = doc.add_paragraph()
+    applRun = applP.add_run("Applied Position")
+    applRun.bold = True
+    applRun.underline = True
+    applRun.font.size = Pt(16)
+    applRun.font.name = "Times New Roman"
+
+    applValueP = doc.add_paragraph()
+    applValueRun = applValueP.add_run(st.session_state.APPLIED_POSITION)
+    applValueRun.font.size = Pt(12)
+    applValueRun.font.name = "Times New Roman"
 
     buffer = io.BytesIO()
     doc.save(buffer)
