@@ -1,11 +1,13 @@
 import re
 import io
+from numpy import True_
 import streamlit as st
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.shared import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import Cm
 
 st.title("Automated Resume Entity & Skill Extractor")
 
@@ -35,6 +37,9 @@ if "PROF_SKILLS" not in st.session_state:
     st.session_state.PROF_SKILLS = None
 if "APPLIED_POSITION" not in st.session_state:
     st.session_state.APPLIED_POSITION = None
+
+if "TEMPLATE" not in st.session_state:
+    st.session_state.TEMPLATE = None
 
 if "docx_bytes" not in st.session_state:
     st.session_state.docx_bytes = None
@@ -84,8 +89,8 @@ def extract_name(text: str) -> str:
         r"my name is\s+(.+)",   # My name is ...
         r"i am\s+(.+)",         # I am ...
         r"i'm\s+(.+)",           # I'm ...
-        r".*ကတော့\s+(.+)\s+.*(ဖြစ်ပါတယ်။|ပါ။|ဖြစ်တယ်။)$",
-        r".*က\s+(.+)\s+.*(ဖြစ်ပါတယ်။|ပါ။|ဖြစ်တယ်။)$"
+        r".*ကတော့\s+(.+)\s+.*(ပဲဖြစ်ပါတယ်။|ဖြစ်ပါတယ်။|ပါ။|ဖြစ်တယ်။)$",
+        r".*က\s+(.+)\s+.*(ပဲဖြစ်ပါတယ်။|ဖြစ်ပါတယ်။|ပါ။|ဖြစ်တယ်။)$"
     ]
 
     for pat in patterns:
@@ -169,7 +174,8 @@ def extract_phone(text: str) -> str:
     text = text.strip(". ").strip()
 
     patterns = [
-        r".*\sis\s+09([0-9]{9})\.$",
+        r".*\s(is)\s+09([0-9]{9})\.$",
+        r"^(09)([0-9]{9})\.?$",
         r".*(ကတော့|က)\s+09([0-9]{9})\s+.*(ဖြစ်ပါတယ်။|ပါ။|ဖြစ်တယ်။)$",
     ]
 
@@ -352,16 +358,17 @@ def extract_projects(text: str) -> str:
     if not text:
         return []
 
+    if re.search(r"(မရှိ|မရှိသေးပါ|မရှိပါ|no)", text, flags=re.IGNORECASE):
+        return "No projects"
+    
     results = []
     parts = [p.strip() for p in text.split(".") if p.strip()]
 
     for part in parts:
         match = re.match(r"^(.+?)$", part)
-        match1 = re.match(r"(?=မရှိ|မရှိပါ|no)", part)
+        match1 = re.search(r"(မရှိ|မရှိသေးပါ|မရှိပါ|no)", part)
         if match:
-            results.append(match.group(1).strip())
-        elif match1:
-            results.append({"No projects"})
+            results.append(match.group(1).strip())        
         else:
             results.append({"raw": part})
 
@@ -387,6 +394,41 @@ def process_soft_skills(text: str) -> str:
         ]
 
     return soft_skills
+
+def extract_tp(text: str) -> str:
+    if not text:
+        return ""
+    text = text.strip(". ").strip()
+
+    # Match 1–3 in English or Myanmar digits
+    pattern = r"([1-3]|[၁-၃])"
+
+    m = re.search(pattern, text)
+    if m:
+        return m.group(1)
+
+    return text  # fallback
+
+def set_cell_background(cell, color_hex: str):
+    tc_pr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:fill'), color_hex)
+    tc_pr.append(shd)
+
+def set_cell_border(cell, **kwargs):
+    tc = cell._tc
+    tc_pr = tc.get_or_add_tcPr()
+    tc_borders = tc_pr.find(qn("w:tcBorders"))
+    if tc_borders is None:
+        tc_borders = OxmlElement("w:tcBorders")
+        tc_pr.append(tc_borders)
+
+    for edge, attrs in kwargs.items():
+        element = OxmlElement(f"w:{edge}")
+        for attr, val in attrs.items():
+            element.set(qn(f"w:{attr}"), val)
+        tc_borders.append(element)
+
 # ---------- Render existing history ----------
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -706,6 +748,69 @@ elif st.session_state.step == "soft_skills" and st.session_state.SOFT_SKILLS is 
             st.write(softSkillsInput)
 
         # All basic info collected
+        st.session_state.step = "template"
+        st.rerun()
+
+elif st.session_state.step == "template" and st.session_state.TEMPLATE is None:
+    templateQuestion = (
+    "မိမိလိုချင်တဲ့ cv ဖောင် ပုံစံကို ရွေးပေးပါ။ "
+    "(ဥပမာ - ပုံစံ ၁, ပုံစံ ၂)"
+    )
+
+    # Show question only once
+    if not any(
+        m["role"] == "assistant" and m["content"] == templateQuestion
+        for m in st.session_state.messages
+    ):
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": templateQuestion
+        })
+
+    # Render messages
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+            # Add 3 expandable images for this question
+            if msg["role"] == "assistant" and msg["content"] == templateQuestion:
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    with st.expander("ပုံစံ ၁"):
+                        st.image(
+                            "img/template_1.png"                            
+                        )
+
+                with col2:
+                    with st.expander("ပုံစံ ၂"):
+                        st.image(
+                            "img/template_2.png"
+                        )
+
+                with col3:
+                    with st.expander("ပုံစံ ၃"):
+                        st.image(
+                            "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400"
+                        )
+
+    # Input box
+    tpInput = st.chat_input("သင့် project အမျိုးအစားကို ဒီမှာ ရေးပေးပါ...")
+
+    if tpInput:
+        st.session_state.messages.append({
+            "role": "user",
+            "content": tpInput
+        })
+
+        tp = extract_tp(tpInput)
+
+        st.session_state.TEMPLATE = tp
+
+        with st.chat_message("user"):
+            st.write(tpInput)
+
+        # All basic info collected
         st.session_state.step = "done"
         st.rerun()
 
@@ -723,173 +828,223 @@ if st.session_state.step == "done" and st.session_state.docx_bytes is None:
 
     doc = Document()
 
-    title = doc.add_paragraph()
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    titleRun = title.add_run("Curriculum Vitae")
-    titleRun.bold = True
-    titleRun.underline = True
-    titleRun.font.size = Pt(36)
-    titleRun.font.name = "Times New Roman"
+    if st.session_state.TEMPLATE == "2" or st.session_state.TEMPLATE == "၂":
+        title = doc.add_paragraph()
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        titleRun = title.add_run("Curriculum Vitae")
+        titleRun.bold = True
+        titleRun.underline = True
+        titleRun.font.size = Pt(36)
+        titleRun.font.name = "Times New Roman"
 
-    nameP = doc.add_paragraph()
-    nameRun = nameP.add_run(st.session_state.name)
-    nameRun.bold = True
-    nameRun.font.size = Pt(24)
-    nameRun.font.name = "Times New Roman"
+        introtable = doc.add_table(rows=5, cols=2)
+        introtable.autofit = False
+        introtable.allow_autofit = False
 
-    dobP = doc.add_paragraph()
-    dobBullet = dobP.add_run("\u2666")
-    dobBullet.bold = True
-    dobBullet.font.size = Pt(12)
-    dobBullet.font.name = "Segoe UI Symbol"
-    dobLable = dobP.add_run("Date of Birth\t: ")
-    dobLable.bold = True
-    dobLable.font.size = Pt(12)
-    dobLable.font.name = "Times New Roman"
-    dobValue = dobP.add_run(st.session_state.DOB)    
-    dobValue.font.size = Pt(12)
-    dobValue.font.name = "Times New Roman"
+        col_widths = [Cm(4), Cm(10)]  # adjust as needed        
 
-    addrP = doc.add_paragraph()
-    addrBullet = addrP.add_run("\u2666")
-    addrBullet.bold = True
-    addrBullet.font.size = Pt(12)
-    addrBullet.font.name = "Segoe UI Symbol"
-    addrLable = addrP.add_run("Address\t\t: ")
-    addrLable.bold = True
-    addrLable.font.size = Pt(12)
-    addrLable.font.name = "Times New Roman"
-    addrValue = addrP.add_run(st.session_state.ADDR)    
-    addrValue.font.size = Pt(12)
-    addrValue.font.name = "Times New Roman"
+        data = [
+            ["Name", st.session_state.name],
+            ["Date of Birth", st.session_state.DOB],
+            ["Phone Number", st.session_state.PHONE],
+            ["Email Address", st.session_state.ADDR],
+            ["Contact Address", st.session_state.EMAIL]
+        ]
 
-    phoneP = doc.add_paragraph()
-    phoneBullet = phoneP.add_run("\u2666")
-    phoneBullet.bold = True
-    phoneBullet.font.size = Pt(12)
-    phoneBullet.font.name = "Segoe UI Symbol"
-    phoneLable = phoneP.add_run("Phone\t\t: ")
-    phoneLable.bold = True
-    phoneLable.font.size = Pt(12)
-    phoneLable.font.name = "Times New Roman"
-    phoneValue = phoneP.add_run(st.session_state.PHONE)
-    phoneValue.font.size = Pt(12)
-    phoneValue.font.name = "Times New Roman"
+        for i, row_data in enumerate(data):
+            for j, value in enumerate(row_data):
+                introtable.cell(i, j).text = value
 
-    emailP = doc.add_paragraph()
-    emailBullet = emailP.add_run("\u2666")
-    emailBullet.bold = True
-    emailBullet.font.size = Pt(12)
-    emailBullet.font.name = "Segoe UI Symbol"
-    emailLable = emailP.add_run("Email\t\t: ")
-    emailLable.bold = True
-    emailLable.font.size = Pt(12)
-    emailLable.font.name = "Times New Roman"
-    emailValue = emailP.add_run(st.session_state.EMAIL)
-    emailValue.font.size = Pt(12)
-    emailValue.font.name = "Times New Roman"
+        # Color first column of each row (including header if you want)
+        for row in introtable.rows:
+            first_cell = row.cells[0]
+            set_cell_background(first_cell, "D9E1F2")
+            for paragraph in first_cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.bold = True  
 
-    hr1P = doc.add_paragraph()
-    insert_hr(hr1P)
+        for row in introtable.rows:
+            for cell in row.cells:
+                set_cell_border(
+                    cell,
+                    bottom={"val": "single", "sz": "4", "color": "000000"}
+                )
 
-    cbP = doc.add_paragraph()
-    cbRun = cbP.add_run("Career Objective")
-    cbRun.bold = True
-    cbRun.underline = True
-    cbRun.font.size = Pt(16)
-    cbRun.font.name = "Times New Roman"
+        for i, width in enumerate(col_widths):
+            for cell in introtable.columns[i].cells:
+                cell.width = width
 
-    cbValueP = doc.add_paragraph()
-    cbValueRun = cbValueP.add_run(st.session_state.CAREER_OBJECTIVE)
-    cbValueRun.font.size = Pt(12)
-    cbValueRun.font.name = "Times New Roman"
-    
-    hr2P = doc.add_paragraph()
-    insert_hr(hr2P)
+        #Continue Here
 
-    degP = doc.add_paragraph()
-    degRun = degP.add_run("Academic Qualifications")
-    degRun.bold = True
-    degRun.underline = True
-    degRun.font.size = Pt(16)
-    degRun.font.name = "Times New Roman"
+    else:
+        title = doc.add_paragraph()
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        titleRun = title.add_run("Curriculum Vitae")
+        titleRun.bold = True
+        titleRun.underline = True
+        titleRun.font.size = Pt(36)
+        titleRun.font.name = "Times New Roman"
 
-    for res in st.session_state.DEGREE:
-        degreeP = doc.add_paragraph()        
-        degreeValue = degreeP.add_run(res["degree"] + '\t' + res["university"] + '\t' + res["year"])
-        degreeValue.font.size = Pt(11)
-        degreeValue.font.name = "Times New Roman"
+        nameP = doc.add_paragraph()
+        nameRun = nameP.add_run(st.session_state.name)
+        nameRun.bold = True
+        nameRun.font.size = Pt(24)
+        nameRun.font.name = "Times New Roman"
 
-    hr2P = doc.add_paragraph()
-    insert_hr(hr2P)
+        dobP = doc.add_paragraph()
+        dobBullet = dobP.add_run("\u2666")
+        dobBullet.bold = True
+        dobBullet.font.size = Pt(12)
+        dobBullet.font.name = "Segoe UI Symbol"
+        dobLable = dobP.add_run("Date of Birth\t: ")
+        dobLable.bold = True
+        dobLable.font.size = Pt(12)
+        dobLable.font.name = "Times New Roman"
+        dobValue = dobP.add_run(st.session_state.DOB)    
+        dobValue.font.size = Pt(12)
+        dobValue.font.name = "Times New Roman"
 
-    prjP = doc.add_paragraph()
-    prjRun = prjP.add_run("Academic Projects")
-    prjRun.bold = True
-    prjRun.underline = True
-    prjRun.font.size = Pt(16)
-    prjRun.font.name = "Times New Roman"
+        addrP = doc.add_paragraph()
+        addrBullet = addrP.add_run("\u2666")
+        addrBullet.bold = True
+        addrBullet.font.size = Pt(12)
+        addrBullet.font.name = "Segoe UI Symbol"
+        addrLable = addrP.add_run("Address\t\t: ")
+        addrLable.bold = True
+        addrLable.font.size = Pt(12)
+        addrLable.font.name = "Times New Roman"
+        addrValue = addrP.add_run(st.session_state.ADDR)    
+        addrValue.font.size = Pt(12)
+        addrValue.font.name = "Times New Roman"
 
-    for res in st.session_state.PROJECTS:
-        prjP = doc.add_paragraph()
-        prjValue = prjP.add_run(res)
-        prjValue.font.size = Pt(11)
-        prjValue.font.name = "Times New Roman"
+        phoneP = doc.add_paragraph()
+        phoneBullet = phoneP.add_run("\u2666")
+        phoneBullet.bold = True
+        phoneBullet.font.size = Pt(12)
+        phoneBullet.font.name = "Segoe UI Symbol"
+        phoneLable = phoneP.add_run("Phone\t\t: ")
+        phoneLable.bold = True
+        phoneLable.font.size = Pt(12)
+        phoneLable.font.name = "Times New Roman"
+        phoneValue = phoneP.add_run(st.session_state.PHONE)
+        phoneValue.font.size = Pt(12)
+        phoneValue.font.name = "Times New Roman"
 
-    hr2P = doc.add_paragraph()
-    insert_hr(hr2P)
+        emailP = doc.add_paragraph()
+        emailBullet = emailP.add_run("\u2666")
+        emailBullet.bold = True
+        emailBullet.font.size = Pt(12)
+        emailBullet.font.name = "Segoe UI Symbol"
+        emailLable = emailP.add_run("Email\t\t: ")
+        emailLable.bold = True
+        emailLable.font.size = Pt(12)
+        emailLable.font.name = "Times New Roman"
+        emailValue = emailP.add_run(st.session_state.EMAIL)
+        emailValue.font.size = Pt(12)
+        emailValue.font.name = "Times New Roman"
 
-    softP = doc.add_paragraph()
-    softRun = softP.add_run("Personal Skills")
-    softRun.bold = True
-    softRun.underline = True
-    softRun.font.size = Pt(16)
-    softRun.font.name = "Times New Roman"
+        hr1P = doc.add_paragraph()
+        insert_hr(hr1P)
 
-    for res in st.session_state.SOFT_SKILLS:
-        softV = doc.add_paragraph()
-        softBullet = softV.add_run("\u2666\t")
-        softBullet.bold = True
-        softBullet.font.size = Pt(12)
-        softBullet.font.name = "Segoe UI Symbol"
-        softValue = softV.add_run(res)
-        softValue.font.size = Pt(11)
-        softValue.font.name = "Times New Roman"
+        cbP = doc.add_paragraph()
+        cbRun = cbP.add_run("Career Objective")
+        cbRun.bold = True
+        cbRun.underline = True
+        cbRun.font.size = Pt(16)
+        cbRun.font.name = "Times New Roman"
 
-    hr2P = doc.add_paragraph()
-    insert_hr(hr2P)
+        cbValueP = doc.add_paragraph()
+        cbValueRun = cbValueP.add_run(st.session_state.CAREER_OBJECTIVE)
+        cbValueRun.font.size = Pt(12)
+        cbValueRun.font.name = "Times New Roman"
+        
+        hr2P = doc.add_paragraph()
+        insert_hr(hr2P)
 
-    psP = doc.add_paragraph()
-    psRun = psP.add_run("Professional Skills")
-    psRun.bold = True
-    psRun.underline = True
-    psRun.font.size = Pt(16)
-    psRun.font.name = "Times New Roman"
+        degP = doc.add_paragraph()
+        degRun = degP.add_run("Academic Qualifications")
+        degRun.bold = True
+        degRun.underline = True
+        degRun.font.size = Pt(16)
+        degRun.font.name = "Times New Roman"
 
-    for res in st.session_state.PROF_SKILLS:
-        psV = doc.add_paragraph()
-        psBullet = psV.add_run("\u2666\t")
-        psBullet.bold = True
-        psBullet.font.size = Pt(12)
-        psBullet.font.name = "Segoe UI Symbol"
-        psValue = psV.add_run(res)
-        psValue.font.size = Pt(11)
-        psValue.font.name = "Times New Roman"
+        for res in st.session_state.DEGREE:
+            degreeP = doc.add_paragraph()        
+            degreeValue = degreeP.add_run(res["degree"] + '\t' + res["university"] + '\t' + res["year"])
+            degreeValue.font.size = Pt(11)
+            degreeValue.font.name = "Times New Roman"
 
-    hr2P = doc.add_paragraph()
-    insert_hr(hr2P)
+        hr2P = doc.add_paragraph()
+        insert_hr(hr2P)
 
-    applP = doc.add_paragraph()
-    applRun = applP.add_run("Applied Position")
-    applRun.bold = True
-    applRun.underline = True
-    applRun.font.size = Pt(16)
-    applRun.font.name = "Times New Roman"
+        if st.session_state.PROJECTS != "No projects":
+            prjP = doc.add_paragraph()
+            prjRun = prjP.add_run("Academic Projects")
+            prjRun.bold = True
+            prjRun.underline = True
+            prjRun.font.size = Pt(16)
+            prjRun.font.name = "Times New Roman"
 
-    applValueP = doc.add_paragraph()
-    applValueRun = applValueP.add_run(st.session_state.APPLIED_POSITION)
-    applValueRun.font.size = Pt(12)
-    applValueRun.font.name = "Times New Roman"
+            for res in st.session_state.PROJECTS:
+                prjP = doc.add_paragraph()
+                prjValue = prjP.add_run(res)
+                prjValue.font.size = Pt(11)
+                prjValue.font.name = "Times New Roman"
+
+            hr2P = doc.add_paragraph()
+            insert_hr(hr2P)
+
+        softP = doc.add_paragraph()
+        softRun = softP.add_run("Personal Skills")
+        softRun.bold = True
+        softRun.underline = True
+        softRun.font.size = Pt(16)
+        softRun.font.name = "Times New Roman"
+
+        for res in st.session_state.SOFT_SKILLS:
+            softV = doc.add_paragraph()
+            softBullet = softV.add_run("\u2666\t")
+            softBullet.bold = True
+            softBullet.font.size = Pt(12)
+            softBullet.font.name = "Segoe UI Symbol"
+            softValue = softV.add_run(res)
+            softValue.font.size = Pt(11)
+            softValue.font.name = "Times New Roman"
+
+        hr2P = doc.add_paragraph()
+        insert_hr(hr2P)
+
+        psP = doc.add_paragraph()
+        psRun = psP.add_run("Professional Skills")
+        psRun.bold = True
+        psRun.underline = True
+        psRun.font.size = Pt(16)
+        psRun.font.name = "Times New Roman"
+
+        for res in st.session_state.PROF_SKILLS:
+            psV = doc.add_paragraph()
+            psBullet = psV.add_run("\u2666\t")
+            psBullet.bold = True
+            psBullet.font.size = Pt(12)
+            psBullet.font.name = "Segoe UI Symbol"
+            psValue = psV.add_run(res)
+            psValue.font.size = Pt(11)
+            psValue.font.name = "Times New Roman"
+
+        hr2P = doc.add_paragraph()
+        insert_hr(hr2P)
+
+        applP = doc.add_paragraph()
+        applRun = applP.add_run("Applied Position")
+        applRun.bold = True
+        applRun.underline = True
+        applRun.font.size = Pt(16)
+        applRun.font.name = "Times New Roman"
+
+        applValueP = doc.add_paragraph()
+        applValueRun = applValueP.add_run(st.session_state.APPLIED_POSITION)
+        applValueRun.font.size = Pt(12)
+        applValueRun.font.name = "Times New Roman"
 
     buffer = io.BytesIO()
     doc.save(buffer)
