@@ -429,6 +429,21 @@ def set_cell_border(cell, **kwargs):
             element.set(qn(f"w:{attr}"), val)
         tc_borders.append(element)
 
+def set_cell_all_borders(cell):
+    """Add solid black borders on all 4 sides of a cell."""
+    tc = cell._tc
+    tc_pr = tc.get_or_add_tcPr()
+    tc_borders = tc_pr.find(qn("w:tcBorders"))
+    if tc_borders is None:
+        tc_borders = OxmlElement("w:tcBorders")
+        tc_pr.append(tc_borders)
+
+    for edge in ("top", "left", "bottom", "right"):
+        element = OxmlElement(f"w:{edge}")
+        element.set(qn("w:val"), "single")
+        element.set(qn("w:sz"), "6")        # ~0.75 pt
+        element.set(qn("w:color"), "000000")
+        tc_borders.append(element)
 # ---------- Render existing history ----------
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -841,7 +856,7 @@ if st.session_state.step == "done" and st.session_state.docx_bytes is None:
         introtable.autofit = False
         introtable.allow_autofit = False
 
-        col_widths = [Cm(4), Cm(10)]  # adjust as needed        
+        col_widths = [Cm(4), Cm(11)]  # adjust as needed        
 
         data = [
             ["Name", st.session_state.name],
@@ -874,8 +889,122 @@ if st.session_state.step == "done" and st.session_state.docx_bytes is None:
             for cell in introtable.columns[i].cells:
                 cell.width = width
 
-        #Continue Here
+        contextTable = doc.add_table(rows=10, cols=1)
+        contextTable.autofit = False
+        contextTable.allow_autofit = False
 
+        contextTable.columns[0].width = Cm(15)
+
+        # Row 1: title
+        title_cell = contextTable.rows[0].cells[0]
+        title_run = title_cell.paragraphs[0].add_run("Educational Background")
+        title_run.bold = True
+        title_run.font.size = Pt(12)
+        title_run.font.name = "Times New Roman"
+        set_cell_background(title_cell, "D9E1F2")
+
+        # Row 2: bullet list of values
+        content_cell = contextTable.rows[1].cells[0]
+        # Clear default paragraph if you want
+        content_cell.paragraphs[0].clear()
+
+        for res in st.session_state.DEGREE:
+            p = content_cell.add_paragraph()
+            p.style = "List Bullet"  # built-in bullet style
+
+            text = f"{res['degree']}, {res['university']}, {res['year']}"
+            run = p.add_run(text)
+            run.font.size = Pt(11)
+            run.font.name = "Times New Roman"
+
+        # Row 1: title
+        exp_title_cell = contextTable.rows[2].cells[0]
+        exp_title_run = exp_title_cell.paragraphs[0].add_run("Experience (Projects, Internships, Training Course, etc...)")
+        exp_title_run.bold = True
+        exp_title_run.font.size = Pt(12)
+        exp_title_run.font.name = "Times New Roman"
+        set_cell_background(exp_title_cell, "D9E1F2")
+
+        # Row 2: bullet list of values
+        exp_content_cell = contextTable.rows[3].cells[0]
+        # Clear default paragraph if you want
+        exp_content_cell.paragraphs[0].clear()
+
+        for res in st.session_state.PROJECTS:
+            p = exp_content_cell.add_paragraph()
+            p.style = "List Bullet"  # built-in bullet style
+
+            text = res
+            run = p.add_run(text)
+            run.font.size = Pt(11)
+            run.font.name = "Times New Roman"
+
+        # Row 1: title
+        p_skills_title_cell = contextTable.rows[4].cells[0]
+        p_skills_title_run = p_skills_title_cell.paragraphs[0].add_run("Technical Skills")
+        p_skills_title_run.bold = True
+        p_skills_title_run.font.size = Pt(12)
+        p_skills_title_run.font.name = "Times New Roman"
+        set_cell_background(p_skills_title_cell, "D9E1F2")
+
+        # Row 2: bullet list of values
+        p_skills_content_cell = contextTable.rows[5].cells[0]
+        # Clear default paragraph if you want
+        p_skills_content_cell.paragraphs[0].clear()
+
+        for res in st.session_state.PROF_SKILLS:
+            p = p_skills_content_cell.add_paragraph()
+            p.style = "List Bullet"  # built-in bullet style
+
+            text = res
+            run = p.add_run(text)
+            run.font.size = Pt(11)
+            run.font.name = "Times New Roman"
+
+        # Row 1: title
+        s_skills_title_cell = contextTable.rows[6].cells[0]
+        s_skills_title_run = s_skills_title_cell.paragraphs[0].add_run("Soft Skills(Communication, Collaboration, Education, etc...)")
+        s_skills_title_run.bold = True
+        s_skills_title_run.font.size = Pt(12)
+        s_skills_title_run.font.name = "Times New Roman"
+        set_cell_background(s_skills_title_cell, "D9E1F2")
+
+        # Row 2: bullet list of values
+        s_skills_content_cell = contextTable.rows[7].cells[0]
+        # Clear default paragraph if you want
+        s_skills_content_cell.paragraphs[0].clear()
+
+        for res in st.session_state.SOFT_SKILLS:
+            p = s_skills_content_cell.add_paragraph()
+            p.style = "List Bullet"  # built-in bullet style
+
+            text = res
+            run = p.add_run(text)
+            run.font.size = Pt(11)
+            run.font.name = "Times New Roman"
+
+        # Row 1: title
+        pos_title_cell = contextTable.rows[8].cells[0]
+        pos_title_run = pos_title_cell.paragraphs[0].add_run("Applied Position")
+        pos_title_run.bold = True
+        pos_title_run.font.size = Pt(12)
+        pos_title_run.font.name = "Times New Roman"
+        set_cell_background(pos_title_cell, "D9E1F2")
+        # Row 2: bullet list of values
+        pos_content_cell = contextTable.rows[9].cells[0]
+        # Clear default paragraph if you want
+        pos_content_cell.paragraphs[0].clear()
+        
+        p = pos_content_cell.add_paragraph()
+        text = st.session_state.APPLIED_POSITION
+        run = p.add_run(text)
+        run.font.size = Pt(11)
+        run.font.name = "Times New Roman"
+
+        for row in contextTable.rows:
+            for cell in row.cells:
+                set_cell_all_borders(cell)
+                
     else:
         title = doc.add_paragraph()
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
