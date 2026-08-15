@@ -53,7 +53,8 @@ if not st.session_state.messages:
         "role": "assistant",
         "content": (
             "မင်္ဂလာပါ၊ ကျွန်တော်ကတော့ အလိုအလျောက် CV နဲ့ ကျွမ်းကျင်မှုတွေ ထုတ်ဖော်ရေးသားပေးသွားမှာပဲဖြစ်ပါတယ်။\n\n"
-            "CV ရေးသားဖို့ ဘယ်ကနေ ဘယ်လိုစရေးရမှန်း မသိတဲ့ လူတွေအတွက် အကူအညီပေးဖို့ ရည်ရွယ်ပါတယ်။ \n CV ကို တည်ဆောက်ဖို့အတွက် ကျွန်တော်က မေးခွန်းအချို့ကို မေးမြန်းသွားမှာပဲ ဖြစ်ပါတယ်။"
+            "CV ရေးသားဖို့ ဘယ်ကနေ ဘယ်လိုစရေးရမှန်း မသိတဲ့ user တွေအတွက် အကူအညီပေးဖို့ ရည်ရွယ်ပါတယ်။ \n CV ကို တည်ဆောက်ဖို့အတွက် ကျွန်တော်က မေးခွန်းအချို့ကို မေးမြန်းသွားမှာပဲ ဖြစ်ပါတယ်။ \n"
+            "သင်ဖြေခဲ့တဲ့ ကိုယ်ရေးကိုယ်တာ အချက်အလက်တွေကို ကျွန်တော်က သိမ်းထားမှာ မဟုတ်ကြောင်း ဦးစွာ အသိပေးပါရစေ။"
         )
     })
     st.session_state.step = "name"  # after intro, go to name question
@@ -342,12 +343,12 @@ def extract_degree(text: str) -> str:
     parts = [p.strip() for p in text.split(".") if p.strip()]
 
     for part in parts:
-        match = re.match(r"^(.+?),\s*(.+?),\s*(\d{4})$", part)
+        match = re.match(r"^.*(ကတော့|က)\s+(.+?),\s*(.+?),\s*(\d{4})$", part)
         if match:
             results.append({
-                "degree": match.group(1).strip(),
-                "university": match.group(2).strip(),
-                "year": match.group(3).strip()
+                "degree": match.group(2).strip(),
+                "university": match.group(3).strip(),
+                "year": match.group(4).strip()
             })
         else:
             results.append({"raw": part})
@@ -834,7 +835,7 @@ elif st.session_state.step == "template" and st.session_state.TEMPLATE is None:
 if st.session_state.step == "done" and st.session_state.docx_bytes is None:
     with st.chat_message("assistant"):
         st.write(
-            "Please wait, I am generating your resume Word file using your name..."
+            "ကျွန်တော် သင့်ရဲ့ CV ကို ထုတ်ပေးနေပါသဖြင့် ခေတ္တခဏ စောင့်ပါ ခင်ဗျာ။"
         )
 
     progress_bar = st.progress(0)
@@ -1182,7 +1183,7 @@ if st.session_state.step == "done" and st.session_state.docx_bytes is None:
 
     with st.chat_message("assistant"):
         st.write(
-            "Your test resume Word file is ready. You can download it below."
+            "သင့်ရဲ့ CV ကို ဒေါင်းလုဒ် လုပ်နိုင်ပါပြီ။ အောက်က ခလုတ်ကို နှိပ်ကာ ဒေါင်းလုဒ် လုပ်နိုင်ပါတယ်။ သင်ဖြေသမျှ ကိုယ်ရေးအချက်အလက်များကို ကျွန်တော် သိမ်းထားမည် မဟုတ်ကြောင်း ထပ်မံ အသိပေးပါရစေ"
         )
 
 # ---------- Download button ----------
