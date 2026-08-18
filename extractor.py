@@ -445,6 +445,173 @@ def set_cell_all_borders(cell):
         element.set(qn("w:sz"), "6")        # ~0.75 pt
         element.set(qn("w:color"), "000000")
         tc_borders.append(element)
+
+def replace_text_node(node, replacement):
+    """
+    Replace the text of a Word XML <w:t> node.
+
+    Converts \\n into actual Word line breaks.
+    """
+
+    parent = node.getparent()
+
+    if parent is None:
+        return
+
+    replacement = (
+        ""
+        if replacement is None
+        else str(replacement)
+    )
+
+    # Split replacement into lines
+    lines = replacement.split("\n")
+
+    # ---------------------------------------------------------
+    # Simple case: no line break required
+    # ---------------------------------------------------------
+
+    if len(lines) == 1:
+
+        node.text = replacement
+
+        return
+
+    # ---------------------------------------------------------
+    # Multiple lines
+    # ---------------------------------------------------------
+
+    # The first line stays in the existing <w:t>
+    node.text = lines[0]
+
+    current_run = parent
+
+    for line in lines[1:]:
+
+        # Add line break
+        br = OxmlElement("w:br")
+        current_run.append(br)
+
+        # Add new text node
+        new_text = OxmlElement("w:t")
+        new_text.text = line
+
+        current_run.append(new_text)
+
+
+def replace_placeholders_in_document(doc, replacements):
+    """
+    Replace placeholders in:
+
+        - normal document text
+        - tables
+        - text boxes
+        - headers
+        - footers
+
+    \\n in replacement values becomes an actual
+    Word line break.
+    """
+
+    parts = []
+
+    # Main document
+    parts.append(doc.element)
+
+    # Headers and footers
+    for section in doc.sections:
+
+        parts.append(
+            section.header._element
+        )
+
+        parts.append(
+            section.footer._element
+        )
+
+    # ---------------------------------------------------------
+    # Search all Word text nodes
+    # ---------------------------------------------------------
+
+    for part in parts:
+
+        text_nodes = part.xpath(
+            ".//*[local-name()='t']"
+        )
+
+        for node in list(text_nodes):
+
+            if node.text is None:
+                continue
+
+            for placeholder, replacement in replacements.items():
+
+                if placeholder not in node.text:
+                    continue
+
+                replacement = (
+                    ""
+                    if replacement is None
+                    else str(replacement)
+                )
+
+                # -------------------------------------------------
+                # Placeholder is entirely inside this text node
+                # -------------------------------------------------
+
+                if node.text == placeholder:
+
+                    replace_text_node(
+                        node,
+                        replacement
+                    )
+
+                    continue
+
+                # -------------------------------------------------
+                # Placeholder is part of this text node
+                # -------------------------------------------------
+
+                if placeholder in node.text:
+
+                    # Keep text before placeholder
+                    before, after = node.text.split(
+                        placeholder,
+                        1
+                    )
+
+                    node.text = before
+
+                    parent = node.getparent()
+
+                    # Find the run containing this text node
+                    run = parent
+
+                    lines = replacement.split("\n")
+
+                    # Insert replacement
+                    for index, line in enumerate(lines):
+
+                        if index > 0:
+
+                            br = OxmlElement("w:br")
+                            run.append(br)
+
+                        if line:
+
+                            new_text = OxmlElement("w:t")
+                            new_text.text = line
+
+                            run.append(new_text)
+
+                    # Add text after placeholder
+                    if after:
+
+                        new_text = OxmlElement("w:t")
+                        new_text.text = after
+
+                        run.append(new_text)
+
 # ---------- Render existing history ----------
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -807,7 +974,7 @@ elif st.session_state.step == "template" and st.session_state.TEMPLATE is None:
                 with col3:
                     with st.expander("ပုံစံ ၃"):
                         st.image(
-                            "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400"
+                            "img/template_3.png"
                         )
 
     # Input box
@@ -1005,6 +1172,89 @@ if st.session_state.step == "done" and st.session_state.docx_bytes is None:
         for row in contextTable.rows:
             for cell in row.cells:
                 set_cell_all_borders(cell)
+
+
+    elif st.session_state.TEMPLATE == "3" or st.session_state.TEMPLATE == "၃":
+
+        doc = Document("temp/tp1.docx")
+
+        # Education
+        education_lines = []
+
+        for res in st.session_state.DEGREE:
+
+            education_lines.append(
+                f"{res['degree']}    \t {res['university']}    \t {res['year']}"
+            )
+
+        education_text = "\n".join(
+            education_lines
+        )
+
+        # Projects
+        if st.session_state.PROJECTS == "No projects":
+            projects_text = ""
+        else:
+            projects_text = "\n".join(
+                str(project)
+                for project in st.session_state.PROJECTS
+            )
+
+        # Technical Skills
+        technical_skills_text = "\n".join(
+            str(skill)
+            for skill in st.session_state.PROF_SKILLS
+        )
+
+        # Soft Skills
+        soft_skills_text = "\n".join(
+            str(skill)
+            for skill in st.session_state.SOFT_SKILLS
+        )
+
+        # Placeholder mapping
+        replacements = {
+
+            "{{APP_POS}}":
+                st.session_state.APPLIED_POSITION,
+
+            "{{NAME}}":
+                st.session_state.name,
+
+            "{{DOB}}":
+                st.session_state.DOB,
+
+            "{{PHONE}}":
+                st.session_state.PHONE,
+
+            "{{ADDR}}":
+                st.session_state.ADDR,
+
+            "{{EMAIL}}":
+                st.session_state.EMAIL,
+
+            "{{CAR_OBJ}}":
+                st.session_state.CAREER_OBJECTIVE,
+
+            "{{EDU}}":
+                education_text,
+
+            "{{PROJECTS}}":
+                projects_text,
+
+            "{{TECH_SKILLS}}":
+                technical_skills_text,
+
+            "{{SOFT_SKILLS}}":
+                soft_skills_text,
+        }
+
+        # Replace placeholders, including text boxes
+        replace_placeholders_in_document(
+            doc,
+            replacements
+        )
+
                 
     else:
         title = doc.add_paragraph()
